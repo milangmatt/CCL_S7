@@ -1,31 +1,87 @@
-# udp_client.py
-import socket  # Import socket module
+import socket
+import threading
+import tkinter as tk
+from tkinter import simpledialog, scrolledtext, messagebox
 
-HOST = '127.0.0.1'  # Server IP
-PORT = 65432        # Server port
+class ChatClient:
+    def __init__(self, master):
+        self.master = master
+        self.master.title("TCP Chat Client")
 
-# Create a UDP socket (IPv4, UDP)
-with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-    print("Connected to UDP server. Type 'exit' to quit.")
+        # Username prompt
+        self.username = simpledialog.askstring("Username", "Enter your name", parent=master)
+        if not self.username:
+            messagebox.showerror("Error", "Username required")
+            master.quit()
+            return
 
-    while True:
-        # Get message from client user
-        message = input("Client: ")
+        # Chat area
+        self.text_area = scrolledtext.ScrolledText(master, state='disabled', width=50, height=20)
+        self.text_area.pack(padx=10, pady=5)
 
-        # Send the message to the server's address
-        s.sendto(message.encode(), (HOST, PORT))
+        # Entry field
+        self.entry_msg = tk.Entry(master, width=40)
+        self.entry_msg.pack(side=tk.LEFT, padx=(10, 5), pady=5)
+        self.entry_msg.bind("<Return>", self.send_message)
 
-        # If client says 'exit', end chat
-        if message.lower() == 'exit':
-            print("Client ended the chat.")
-            break
+        # Send button
+        self.send_btn = tk.Button(master, text="Send", command=self.send_message)
+        self.send_btn.pack(side=tk.LEFT, padx=(0, 10), pady=5)
 
-        # Receive server's reply
-        data, server = s.recvfrom(1024)
-        reply = data.decode()
-        print(f"Server: {reply}")
+        # Connect to server
+        self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            self.client_socket.connect(('127.0.0.1', 5000))
+            self.client_socket.send(self.username.encode())
+        except Exception as e:
+            messagebox.showerror("Connection Error", str(e))
+            master.quit()
+            return
 
-        # If server says 'exit', end chat
-        if reply.lower() == 'exit':
-            print("Server ended the chat.")
-            break
+        # Show join message in chat area
+        self.text_area.config(state='normal')
+        self.text_area.insert(tk.END, "you have joined the chat\n")
+        self.text_area.config(state='disabled')
+        self.text_area.see(tk.END)
+
+        # Start receiving thread
+        threading.Thread(target=self.receive_messages, daemon=True).start()
+
+    def send_message(self, event=None):
+        msg = self.entry_msg.get()
+        if msg:
+            try:
+                self.client_socket.send(msg.encode())
+                # Show own message as 'you: message' in chat area
+                self.text_area.config(state='normal')
+                self.text_area.insert(tk.END, f"you: {msg}\n")
+                self.text_area.config(state='disabled')
+                self.text_area.see(tk.END)
+                self.entry_msg.delete(0, tk.END)
+            except:
+                messagebox.showerror("Send Error", "Failed to send message")
+                self.master.quit()
+
+    def receive_messages(self):
+        while True:
+            try:
+                msg = self.client_socket.recv(1024).decode()
+                self.text_area.config(state='normal')
+                self.text_area.insert(tk.END, msg + "\n")
+                self.text_area.config(state='disabled')
+                self.text_area.see(tk.END)
+            except:
+                break
+
+    def on_closing(self):
+        try:
+            self.client_socket.close()
+        except:
+            pass
+        self.master.quit()
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    client = ChatClient(root)
+    root.protocol("WM_DELETE_WINDOW", client.on_closing)
+    root.mainloop()
